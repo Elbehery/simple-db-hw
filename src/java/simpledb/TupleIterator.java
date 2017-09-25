@@ -7,19 +7,18 @@ import java.util.*;
  */
 public class TupleIterator implements OpIterator {
     /**
-	 * 
-	 */
+     *
+     */
     private static final long serialVersionUID = 1L;
-    Iterator<Tuple> i = null;
+    Iterator<Tuple> iterator = null;
     TupleDesc td = null;
     Iterable<Tuple> tuples = null;
 
     /**
      * Constructs an iterator from the specified Iterable, and the specified
      * descriptor.
-     * 
-     * @param tuples
-     *            The set of tuples to iterate over
+     *
+     * @param tuples The set of tuples to iterate over
      */
     public TupleIterator(TupleDesc td, Iterable<Tuple> tuples) {
         this.td = td;
@@ -34,15 +33,15 @@ public class TupleIterator implements OpIterator {
     }
 
     public void open() {
-        i = tuples.iterator();
+        this.iterator = tuples.iterator();
     }
 
     public boolean hasNext() {
-        return i.hasNext();
+        return iterator.hasNext();
     }
 
     public Tuple next() {
-        return i.next();
+        return iterator.next();
     }
 
     public void rewind() {
@@ -55,6 +54,6 @@ public class TupleIterator implements OpIterator {
     }
 
     public void close() {
-        i = null;
+        iterator = null;
     }
 }

@@ -97,7 +97,7 @@ public class Catalog {
     public DbFile getDatabaseFile(int tableid) throws NoSuchElementException {
         if (this.dbTables.containsKey(tableid)) {
             return this.dbTables.get(tableid).dbFile;
-        }
+        }else
         throw new NoSuchElementException("Table doesn't exist ");
     }
 

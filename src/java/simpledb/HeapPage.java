@@ -20,6 +20,8 @@ public class HeapPage implements Page {
 
     byte[] oldData;
     private final Byte oldDataLock = new Byte((byte) 0);
+    private boolean dirty;
+    private TransactionId dirtierTID;
 
     /**
      * Create a HeapPage from a set of bytes of data read from disk.
@@ -242,8 +244,14 @@ public class HeapPage implements Page {
      *                     already empty.
      */
     public void deleteTuple(Tuple t) throws DbException {
-        // some code goes here
-        // not necessary for lab1
+        // specify the index of the record
+        RecordId recordId = t.getRecordId();
+        if (t.getRecordId().getPageId() != this.pid || !isSlotUsed(recordId.getTupleNumber())
+                || recordId.getTupleNumber() < 0 || recordId.getTupleNumber() > getNumTuples()) {
+            throw new DbException(String.format("Requested Tuple for deletion does not exist. %s", recordId));
+        }
+        this.tuples[recordId.getTupleNumber()] = null;
+        markSlotUsed(recordId.getTupleNumber(), false);
     }
 
     /**
@@ -255,8 +263,22 @@ public class HeapPage implements Page {
      *                     is mismatch.
      */
     public void insertTuple(Tuple t) throws DbException {
-        // some code goes here
-        // not necessary for lab1
+        if (getNumEmptySlots() < 1 || !t.getTupleDesc().equals(td)) {
+            throw new DbException(String.format("Error during inserting Tuple %s . Number of empty slots within this page is %d.", t, getNumEmptySlots()));
+        }
+
+        // find first empty slot
+        int insertionIndex = 0;
+        while (insertionIndex < this.numSlots) {
+            if (!isSlotUsed(insertionIndex)) {
+                break;
+            }
+            insertionIndex++;
+        }
+        // update tuple header && page header
+        t.setRecordId(new RecordId(this.pid, insertionIndex));
+        this.tuples[insertionIndex] = t;
+        markSlotUsed(insertionIndex, true);
     }
 
     /**
@@ -264,17 +286,15 @@ public class HeapPage implements Page {
      * that did the dirtying
      */
     public void markDirty(boolean dirty, TransactionId tid) {
-        // some code goes here
-        // not necessary for lab1
+        this.dirty = dirty;
+        this.dirtierTID = tid;
     }
 
     /**
      * Returns the tid of the transaction that last dirtied this page, or null if the page is not dirty
      */
     public TransactionId isDirty() {
-        // some code goes here
-        // Not necessary for lab1
-        return null;
+        return this.dirty == true ? this.dirtierTID : null;
     }
 
     /**

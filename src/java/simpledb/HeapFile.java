@@ -1,5 +1,6 @@
 package simpledb;
 
+import javax.xml.crypto.Data;
 import java.io.*;
 import java.util.*;
 
@@ -17,6 +18,9 @@ public class HeapFile implements DbFile {
 
     private TupleDesc tupleDesc;
     private File dataFile;
+    private int currentPages;
+
+    // TODO : keep track of pages with empty slots
 
     /**
      * Constructs a heap file backed by the specified file.
@@ -30,6 +34,7 @@ public class HeapFile implements DbFile {
 
         this.tupleDesc = td;
         this.dataFile = f;
+        this.currentPages = 1;
     }
 
     /**
@@ -67,13 +72,20 @@ public class HeapFile implements DbFile {
     public Page readPage(PageId pid) {
 
         int pageNumber = pid.getPageNumber();
+        Page requestedPage = null;
 
-        if (pageNumber < 0 || pageNumber > numPages())
+        if (pageNumber < 0)
             throw new IllegalArgumentException("Page ID is not valid, Page doesn't exist");
 
-        int readOffset = (pid.getPageNumber()) * BufferPool.getPageSize();
+        // add new page if required and return it
+        if (pageNumber > numPages()) {
+            requestedPage = addPageToFile();
+            return requestedPage;
+        }
+
+        // read existing page from DISK, using Pointer/Offset arithmetic
+        int readOffset = pageNumber * BufferPool.getPageSize();
         byte[] buffer = HeapPage.createEmptyPageData();
-        Page requestedPage = null;
 
         try {
             FileInputStream fis = new FileInputStream(this.dataFile);
@@ -88,34 +100,79 @@ public class HeapFile implements DbFile {
         return requestedPage;
     }
 
+    private Page addPageToFile() {
+        HeapPageId newPageId = new HeapPageId(this.getId(), numPages() + 1);
+        this.currentPages++;
+        HeapPage newHeapPage = null;
+        try {
+            newHeapPage = new HeapPage(newPageId, HeapPage.createEmptyPageData());
+        } catch (IOException e) {
+            System.err.println(String.format("Error while adding a new Page to file %d", getId()));
+            System.exit(0);
+        }
+        return newHeapPage;
+    }
+
     // see DbFile.java for javadocs
     public void writePage(Page page) throws IOException {
-        // TODO : currentPage++ && write the page.
-        // some code goes here
-        // not necessary for lab1
+        // write page to DISK, using Pointer/Offset arithmetic
+        int pageNumber = page.getId().getPageNumber();
+        int writeOffset = pageNumber * BufferPool.getPageSize();
+        FileOutputStream fos = null;
+        try {
+            fos = new FileOutputStream(this.dataFile);
+            fos.write(page.getPageData(), writeOffset, BufferPool.getPageSize());
+            fos.flush();
+        } catch (IOException e) {
+            System.err.println(String.format("Page number %d from TableFile %d is could not be flushed to disk.", pageNumber, page.getId().getTableId()));
+            e.printStackTrace();
+        } finally {
+            fos.close();
+        }
     }
 
     /**
      * Returns the number of pages in this HeapFile.
      */
     public int numPages() {
-        return (int) (this.dataFile.length() / BufferPool.getPageSize());
+        return Math.max((int) (this.dataFile.length() / BufferPool.getPageSize()), currentPages);
     }
 
     // see DbFile.java for javadocs
     public ArrayList<Page> insertTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        return null;
-        // not necessary for lab1
+        // retrieve the page from the BufferPool
+        // The BufferPool will instruct the heapfile to read from Desk if the page is not cached.
+        HeapPageId newHeapPageId = new HeapPageId(getId(), numPages());
+        HeapPage heapPage = (HeapPage) Database.getBufferPool().getPage(tid, newHeapPageId, Permissions.READ_WRITE);
+        // if the page is full
+        if (heapPage.getNumEmptySlots() < 1) {
+            newHeapPageId = new HeapPageId(getId(), numPages() + 1);
+            heapPage = (HeapPage) Database.getBufferPool().getPage(tid, newHeapPageId, Permissions.READ_WRITE);
+        }
+        // update record metadata
+        RecordId newRecordId = new RecordId(newHeapPageId, t.getRecordId().getTupleNumber());
+        t.setRecordId(newRecordId);
+        // insert the tuple and mark page as dirty to be flushed later
+        heapPage.insertTuple(t);
+        heapPage.markDirty(true, tid);
+        ArrayList<Page> modifiedPages = new ArrayList<>();
+        modifiedPages.add(heapPage);
+        return modifiedPages;
     }
 
     // see DbFile.java for javadocs
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException,
             TransactionAbortedException {
-        // some code goes here
-        return null;
-        // not necessary for lab1
+        // retrieve the page from the BufferPool
+        // The BufferPool will instruct the heapfile to read from Desk if the page is not cached.
+        HeapPage heapPage = (HeapPage) Database.getBufferPool().getPage(tid, t.getRecordId().getPageId(), Permissions.READ_WRITE);
+        heapPage.deleteTuple(t);
+        // update page metadata
+        heapPage.markDirty(true, tid);
+        ArrayList<Page> modifiedPages = new ArrayList<>();
+        modifiedPages.add(heapPage);
+        return modifiedPages;
     }
 
     // see DbFile.java for javadocs

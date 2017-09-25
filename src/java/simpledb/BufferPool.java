@@ -2,8 +2,7 @@ package simpledb;
 
 import java.io.*;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -19,7 +18,9 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class BufferPool {
 
+    private static int bufferCapacity;
     private Map<PageId, Page> pagesByPageID;
+    private Queue<PageId> evictionQueue;
 
     /**
      * Bytes per page, including header.
@@ -41,7 +42,9 @@ public class BufferPool {
      * @param numPages maximum number of pages in this buffer pool.
      */
     public BufferPool(int numPages) {
-        this.pagesByPageID = new HashMap<>(numPages);
+        bufferCapacity = numPages;
+        this.pagesByPageID = new HashMap<>(bufferCapacity);
+        this.evictionQueue = new LinkedList<>();
     }
 
     /**
@@ -85,12 +88,15 @@ public class BufferPool {
         if (this.pagesByPageID.containsKey(pid)) {
             // retrieve the page
             return this.pagesByPageID.get(pid);
-        } else if (this.pagesByPageID.size() < BufferPool.DEFAULT_PAGES) {
-            // add the page to BufferPool, then return it
-            this.pagesByPageID.put(pid, Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid));
-            return this.pagesByPageID.get(pid);
+        } else if (this.pagesByPageID.size() == BufferPool.bufferCapacity) {
+            evictPage();
         }
-        throw new DbException("BufferPool is FULL");
+
+        // add the page to BufferPool, then return it
+        Page newPage = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
+        this.pagesByPageID.put(newPage.getId(), newPage);
+        this.evictionQueue.add(newPage.getId());
+        return newPage;
     }
 
     /**
@@ -156,8 +162,8 @@ public class BufferPool {
      */
     public void insertTuple(TransactionId tid, int tableId, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+        HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
+        List<Page> modifiedPages = heapFile.insertTuple(tid, t);
     }
 
     /**
@@ -175,8 +181,8 @@ public class BufferPool {
      */
     public void deleteTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+        HeapFile heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId());
+        List<Page> modifiedPages = heapFile.deleteTuple(tid, t);
     }
 
     /**
@@ -185,9 +191,11 @@ public class BufferPool {
      * break simpledb if running in NO STEAL mode.
      */
     public synchronized void flushAllPages() throws IOException {
-        // some code goes here
-        // not necessary for lab1
-
+        for (PageId key : pagesByPageID.keySet()) {
+            if (pagesByPageID.get(key).isDirty() != null) {
+                flushPage(key);
+            }
+        }
     }
 
     /**
@@ -200,8 +208,7 @@ public class BufferPool {
      * are removed from the cache so they can be reused safely
      */
     public synchronized void discardPage(PageId pid) {
-        // some code goes here
-        // not necessary for lab1
+        this.pagesByPageID.remove(pid);
     }
 
     /**
@@ -210,8 +217,10 @@ public class BufferPool {
      * @param pid an ID indicating the page to flush
      */
     private synchronized void flushPage(PageId pid) throws IOException {
-        // some code goes here
-        // not necessary for lab1
+        Page page = pagesByPageID.get(pid);
+        DbFile file = Database.getCatalog().getDatabaseFile(page.getId().getTableId());
+        page.markDirty(false, pagesByPageID.get(pid).isDirty());
+        file.writePage(page);
     }
 
     /**
@@ -227,8 +236,15 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized void evictPage() throws DbException {
-        // some code goes here
-        // not necessary for lab1
+        PageId pageId = this.evictionQueue.remove();
+        if (pagesByPageID.get(pageId).isDirty() != null) {
+            try {
+                flushPage(pageId);
+            } catch (IOException e) {
+                System.err.println(String.format("Page %s could not be flushed && evicted"));
+            }
+        }
+        pagesByPageID.remove(pageId);
     }
 
 }

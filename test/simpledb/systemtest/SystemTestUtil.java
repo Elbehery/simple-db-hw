@@ -151,6 +151,7 @@ public class SystemTestUtil {
      * @return amount of RAM (in bytes) used by JVM
      */
     public static long getMemoryFootprint() {
+        // TODO
         // Call System.gc in a loop until it stops freeing memory. This is
         // still no guarantee that all the memory is freed, since System.gc is
         // just a "hint".
